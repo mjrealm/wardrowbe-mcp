@@ -12,13 +12,26 @@ It runs over two transports:
 - Node.js 20 or newer.
 - A running Wardrowbe instance and credentials for it (see [Authentication](#authentication)).
 
-## Quick start
+## Getting started
+
+You need three things: your Wardrowbe URL, an OIDC client that can sign you in (Pocket ID works), and a refresh token for that client.
+
+1. **Find your Wardrowbe URL.** This is where you open the web app, e.g. `https://wardrowbe.example.com`.
+2. **Set up the OIDC client.** In your IdP, create a client for Wardrowbe. Allow the `openid profile email offline_access` scopes, and register a redirect URI for your sign-in helper (for example `http://localhost:8765/callback`).
+3. **Get a refresh token.** Sign in once through the IdP in a browser and keep the `refresh_token` from the token response. The server does not open a browser, so this step happens outside it.
+4. **Check it works.** Run the server with the settings below. In an MCP client, call `list_items`. If you get your wardrobe back, it's set up.
 
 ```bash
 WARDROWBE_URL=https://wardrowbe.example.com \
-WARDROWBE_TOKEN=<access-token> \
+OIDC_ISSUER_URL=https://pocket.example.com \
+OIDC_CLIENT_ID=wardrowbe \
+OIDC_REFRESH_TOKEN=<refresh-token> \
 npx -y wardrowbe-mcp
 ```
+
+Over stdio, the process waits for an MCP client to connect, so running it from a terminal shows nothing until a client attaches. Use one of the sections below to connect a client.
+
+If you only have a Wardrowbe access token already, set `WARDROWBE_TOKEN` instead of the `OIDC_*` variables. It expires, so the OIDC route is better for regular use.
 
 ## Configuration
 
