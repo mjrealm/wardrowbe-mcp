@@ -18,7 +18,7 @@ You need three things: your Wardrowbe URL, an OIDC client that can sign you in (
 
 1. **Find your Wardrowbe URL.** This is where you open the web app, e.g. `https://wardrowbe.example.com`.
 2. **Set up the OIDC client.** In your IdP, create a client for Wardrowbe. Allow the `openid profile email offline_access` scopes, and register a redirect URI for your sign-in helper (for example `http://localhost:8765/callback`).
-3. **Get a refresh token.** Sign in once through the IdP in a browser and keep the `refresh_token` from the token response. The server does not open a browser, so this step happens outside it.
+3. **Get a refresh token.** Sign in once through the IdP and keep the `refresh_token` from the token response. The server does not open a browser, so this step happens outside it. See [Getting a refresh token](#getting-a-refresh-token) for the steps.
 4. **Check it works.** Run the server with the settings below. In an MCP client, call `list_items`. If you get your wardrobe back, it's set up.
 
 ```bash
@@ -56,6 +56,47 @@ Wardrowbe signs its own access tokens. There are two ways to provide one:
 2. **OIDC refresh token (recommended).** Set the `OIDC_*` variables. On each call, the server exchanges the refresh token for an ID token, trades that at `POST /api/v1/auth/sync` for a Wardrowbe access token, and caches it until shortly before it expires. If the issuer rotates refresh tokens, the server keeps the newest one in memory only. Your IdP client needs `offline_access`, or the issuer won't return a refresh token.
 
 Get the initial refresh token with a normal OIDC sign-in in a browser, for example with a PKCE helper script. The server itself can't open a browser.
+
+## Getting a refresh token
+
+You do this once per setup. Repeat it only if the refresh token is revoked, expires, or stops refreshing. The server then uses the token to get Wardrowbe access tokens on its own.
+
+This is a manual OAuth authorization-code flow with PKCE. The `login` command that automates it is planned but not built yet.
+
+**Before you start:** create an OIDC client in your identity provider for Wardrowbe. Use a public client with PKCE (no secret needed), allow the scopes `openid profile email offline_access`, and register a redirect URI such as `http://localhost:8765/callback`. Write down the client ID.
+
+**1. Create a PKCE verifier and challenge** (macOS or Linux shell):
+
+```bash
+VERIFIER=$(openssl rand -base64 48 | tr -d '=+/' | cut -c1-64)
+CHALLENGE=$(printf %s "$VERIFIER" | openssl dgst -sha256 -binary | openssl base64 -A | tr '+/' '-_' | tr -d '=')
+echo "$VERIFIER"   # keep this, you need it in step 3
+```
+
+**2. Open the authorize URL in your browser** and sign in as yourself. Replace the placeholders, and URL-encode the redirect URI if your shell requires it:
+
+```
+https://<issuer>/authorize?response_type=code&client_id=<client-id>&redirect_uri=http://localhost:8765/callback&scope=openid%20profile%20email%20offline_access&code_challenge=<CHALLENGE>&code_challenge_method=S256&state=xyz
+```
+
+Nothing needs to listen on `localhost:8765`. After you sign in, the browser lands on an error page, and the address bar contains `?code=...`. Copy that `code` value.
+
+**3. Exchange the code for tokens:**
+
+```bash
+curl -s -X POST https://<issuer>/api/oidc/token \
+  -d grant_type=authorization_code \
+  -d client_id=<client-id> \
+  -d code=<code-from-step-2> \
+  -d redirect_uri=http://localhost:8765/callback \
+  -d code_verifier="$VERIFIER"
+```
+
+The JSON response includes `refresh_token`. Keep it, and treat it like a password. If the response has no `refresh_token`, check that the client allows `offline_access`.
+
+For Pocket ID, `<issuer>` is your Pocket ID base URL, such as `pocket.example.com`. Its token endpoint path is `/api/oidc/token`. Other providers use different paths, so check their discovery document at `/.well-known/openid-configuration`.
+
+Store the refresh token and client ID as secrets in the MCP client's environment settings. Don't commit them.
 
 ## Use with npx (stdio)
 
