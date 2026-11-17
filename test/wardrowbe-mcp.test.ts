@@ -4,6 +4,7 @@ import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { ConfigError, loadConfig, type Config } from "../src/config.js";
 import { TokenProvider, WardrowbeApiError, WardrowbeClient } from "../src/client.js";
 import { isAuthorized } from "../src/http.js";
+import { challengeFor, runLogin } from "../src/login.js";
 import { createServer } from "../src/server.js";
 
 const BASE = "https://wardrowbe.example.com";
@@ -232,5 +233,115 @@ describe("MCP tools end to end", () => {
     expect(result.isError).toBe(true);
     expect((result.content as { text: string }[])[0].text).toContain("Invalid UUID");
     expect(fetchFn).not.toHaveBeenCalled();
+  });
+});
+
+describe("login", () => {
+  it("derives the S256 challenge from the RFC 7636 example", () => {
+    expect(challengeFor("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk")).toBe(
+      "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+    );
+  });
+
+  it("completes the browser sign-in and returns the refresh token", async () => {
+    const issuer = "https://id.example.com";
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url === `${issuer}/.well-known/openid-configuration`) {
+        return json({
+          authorization_endpoint: `${issuer}/authorize`,
+          token_endpoint: `${issuer}/api/oidc/token`,
+        });
+      }
+      if (url === `${issuer}/api/oidc/token`) {
+        const form = new URLSearchParams(String(init?.body));
+        expect(form.get("grant_type")).toBe("authorization_code");
+        expect(form.get("code")).toBe("the-code");
+        expect(form.get("code_verifier")).toMatch(/^[A-Za-z0-9_-]{43,}$/);
+        return json({ refresh_token: "rt-123", id_token: "idt" });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    let authorizeUrl = "";
+    const resultPromise = runLogin({
+      issuerUrl: issuer,
+      clientId: "wardrowbe",
+      port: 18765,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      openBrowser: (url) => {
+        authorizeUrl = url;
+      },
+      log: () => {},
+    });
+
+    // Wait for the browser step, then play the browser: redirect back with the code and state.
+    resultPromise.catch(() => {});
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(""));
+    const authorize = new URL(authorizeUrl);
+    expect(authorize.searchParams.get("scope")).toContain("offline_access");
+    expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
+    const state = authorize.searchParams.get("state");
+    const callback = await fetch(
+      `http://127.0.0.1:18765/callback?code=the-code&state=${encodeURIComponent(state ?? "")}`,
+    );
+    expect(callback.status).toBe(200);
+
+    await expect(resultPromise).resolves.toEqual({ refreshToken: "rt-123", idToken: "idt" });
+  });
+
+  it("rejects a callback whose state does not match", async () => {
+    const issuer = "https://id.example.com";
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/.well-known/openid-configuration")) {
+        return json({ authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/t` });
+      }
+      throw new Error(`unexpected ${url}`);
+    });
+
+    let authorizeUrl = "";
+    const resultPromise = runLogin({
+      issuerUrl: issuer,
+      clientId: "wardrowbe",
+      port: 18766,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      openBrowser: (url) => {
+        authorizeUrl = url;
+      },
+      log: () => {},
+    });
+    resultPromise.catch(() => {});
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(""));
+    await fetch("http://127.0.0.1:18766/callback?code=x&state=wrong");
+    await expect(resultPromise).rejects.toThrow(/mismatched state/);
+  });
+
+  it("explains when the provider returns no refresh token", async () => {
+    const issuer = "https://id.example.com";
+    const fetchFn = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/.well-known/openid-configuration")) {
+        return json({ authorization_endpoint: `${issuer}/authorize`, token_endpoint: `${issuer}/t` });
+      }
+      return json({ id_token: "idt" });
+    });
+
+    let authorizeUrl = "";
+    const resultPromise = runLogin({
+      issuerUrl: issuer,
+      clientId: "wardrowbe",
+      port: 18767,
+      fetchFn: fetchFn as unknown as typeof fetch,
+      openBrowser: (url) => {
+        authorizeUrl = url;
+      },
+      log: () => {},
+    });
+    resultPromise.catch(() => {});
+    await vi.waitFor(() => expect(authorizeUrl).not.toBe(""));
+    const state = new URL(authorizeUrl).searchParams.get("state") ?? "";
+    await fetch(`http://127.0.0.1:18767/callback?code=c&state=${encodeURIComponent(state)}`);
+    await expect(resultPromise).rejects.toThrow(/offline_access/);
   });
 });

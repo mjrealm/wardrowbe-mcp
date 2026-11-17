@@ -61,7 +61,15 @@ Get the initial refresh token with a normal OIDC sign-in in a browser, for examp
 
 You do this once per setup. Repeat it only if the refresh token is revoked, expires, or stops refreshing. The server then uses the token to get Wardrowbe access tokens on its own.
 
-This is a manual OAuth authorization-code flow with PKCE. The `login` command that automates it is planned but not built yet.
+The easiest way is the `login` command:
+
+```bash
+npx -y wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
+```
+
+It opens your browser at the issuer's sign-in page with PKCE and the `offline_access` scope. It catches the redirect on `http://localhost:8765/callback`, exchanges the code, and writes the refresh token to stdout. Status messages go to stderr, so the redirect only captures the token. Use `--port` to change the port, and `--client-secret` for a confidential client. The redirect URI you registered must match the port. Delete `refresh-token.txt` after you copy the token into MCPHub.
+
+The manual steps below do the same thing by hand.
 
 **Before you start:** create an OIDC client in your identity provider for Wardrowbe. Use a public client with PKCE (no secret needed), allow the scopes `openid profile email offline_access`, and register a redirect URI such as `http://localhost:8765/callback`. Write down the client ID.
 
