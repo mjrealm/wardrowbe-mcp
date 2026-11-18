@@ -1,4 +1,6 @@
 #!/usr/bin/env node
+import { chmod, mkdir, writeFile } from "node:fs/promises";
+import { dirname } from "node:path";
 import { parseArgs } from "node:util";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { ConfigError, loadConfig } from "./config.js";
@@ -8,12 +10,14 @@ import { createServer, SERVER_NAME, SERVER_VERSION } from "./server.js";
 
 const USAGE = `Usage:
   wardrowbe-mcp                 Run the MCP server (stdio, or http if MCP_TRANSPORT=http)
-  wardrowbe-mcp login [options] One-time sign-in. Prints a refresh token to stdout.
+  wardrowbe-mcp login [options] One-time sign-in. Prints a refresh token to stdout, or to --out.
 
 Login options (each can also come from the environment):
   --issuer <url>          OIDC issuer, e.g. https://pocket.example.com   (OIDC_ISSUER_URL)
   --client-id <id>        OIDC client ID                                  (OIDC_CLIENT_ID)
-  --client-secret <s>     Only for confidential clients                   (OIDC_CLIENT_SECRET)
+  --client-secret <s>     Only for confidential clients. Prefer the env var (OIDC_CLIENT_SECRET)
+                          so the secret stays out of shell history.
+  --out <file>            Write the token to this file (owner-only) instead of stdout.
   --port <n>              Localhost port for the redirect. Default 8765.
 `;
 
@@ -25,6 +29,7 @@ async function login(argv: string[]): Promise<void> {
       "client-id": { type: "string" },
       "client-secret": { type: "string" },
       port: { type: "string" },
+      out: { type: "string" },
       help: { type: "boolean", short: "h" },
     },
     strict: true,
@@ -47,6 +52,32 @@ async function login(argv: string[]): Promise<void> {
 
   const result = await runLogin({ issuerUrl: issuer, clientId, clientSecret, port });
 
+  const secretNote = clientSecret ? "  OIDC_CLIENT_SECRET=<the client secret>" : null;
+  const setFor = [
+    `  OIDC_ISSUER_URL=${issuer}`,
+    `  OIDC_CLIENT_ID=${clientId}`,
+    ...(secretNote ? [secretNote] : []),
+    "  OIDC_REFRESH_TOKEN=<the token>",
+  ];
+
+  if (values.out) {
+    // --out writes the token to an owner-only file, so no shell redirect is needed.
+    await mkdir(dirname(values.out), { recursive: true, mode: 0o700 });
+    await writeFile(values.out, `${result.refreshToken}\n`, { mode: 0o600 });
+    await chmod(values.out, 0o600);
+    process.stderr.write(
+      [
+        "",
+        `Refresh token written to ${values.out} (owner-only, not printed).`,
+        "Set these for the MCP server:",
+        ...setFor,
+        "Then delete the file.",
+        "",
+      ].join("\n"),
+    );
+    return;
+  }
+
   // The token goes to stdout alone, so `wardrowbe-mcp login > token.txt` captures just the value.
   process.stdout.write(`${result.refreshToken}\n`);
   process.stderr.write(
@@ -54,9 +85,7 @@ async function login(argv: string[]): Promise<void> {
       "",
       "Refresh token printed to stdout. Store it as a secret, not in the repo.",
       "Set these for the MCP server:",
-      `  OIDC_ISSUER_URL=${issuer}`,
-      `  OIDC_CLIENT_ID=${clientId}`,
-      "  OIDC_REFRESH_TOKEN=<the value above>",
+      ...setFor,
       "",
     ].join("\n"),
   );
