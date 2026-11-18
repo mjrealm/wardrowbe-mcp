@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { Config } from "./config.js";
 import { WardrowbeClient, TokenProvider, type SignInHooks } from "./client.js";
@@ -40,6 +41,24 @@ function signInHooks(config: Config): SignInHooks {
   };
 }
 
+/** Agent guidance, shipped in the package. Works from src/ (tests) and dist/ (published build). */
+const SKILL_URI = "skill://wardrowbe-skill/SKILL.md";
+const skillText = readFileSync(new URL("../skill/SKILL.md", import.meta.url), "utf8");
+
+/** Exposes SKILL.md as an MCP resource, so clients that install skills pick it up. */
+function registerSkill(server: McpServer): void {
+  server.registerResource(
+    "wardrowbe-skill",
+    SKILL_URI,
+    {
+      title: "Wardrowbe skill",
+      description: "How to use the Wardrowbe tools: choosing a tool, adding items from photos, archiving.",
+      mimeType: "text/markdown",
+    },
+    (uri) => ({ contents: [{ uri: uri.toString(), mimeType: "text/markdown", text: skillText }] }),
+  );
+}
+
 /** Builds an MCP server with all Wardrowbe tools registered against the configured instance. */
 export function createServer(
   config: Config,
@@ -50,5 +69,6 @@ export function createServer(
   const client = new WardrowbeClient(config, tokens, fetchFn);
   const server = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
   registerTools(server, client, uploads);
+  registerSkill(server);
   return server;
 }

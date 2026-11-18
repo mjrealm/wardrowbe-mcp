@@ -192,12 +192,17 @@ describe("MCP tools end to end", () => {
       [
         "accept_outfit",
         "add_item",
+        "archive_item",
         "get_analytics",
         "get_item",
+        "get_items_to_wash",
+        "get_most_worn_items",
+        "get_wardrobe_summary",
         "list_items",
         "log_wash",
         "log_wear",
         "reject_outfit",
+        "restore_item",
         "suggest_outfit",
       ].sort(),
     );
