@@ -27,7 +27,15 @@
     "wardrobe",
     "wardrowbe"
   ],
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mjrealm/wardrowbe-mcp.git"
+  },
+  "homepage": "https://github.com/mjrealm/wardrowbe-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/mjrealm/wardrowbe-mcp/issues"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "zod": "^4.6.7"
