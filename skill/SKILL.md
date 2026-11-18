@@ -32,6 +32,8 @@ Use these tools to help the user with their own wardrobe. Wardrowbe stores each 
 
 Shrink the photo before encoding it to base64. Resize the longest side to 512 pixels and save it as JPEG at quality 70. Most clothing photos come out well under 300 KB this way. If the result is still over the limit, lower the quality in steps of 10, down to 50.
 
+A reduced photo is fine for adding the item. Once the item is added, tell the user they can upload a full-resolution photo later from the app if they want a sharper image.
+
 If you have no tool to resize or re-encode images, don't send the original. Tell the user the photo is too large and ask for a smaller one, or ask them to use the app, which can upload full-size photos.
 
 An `upload_id` works once and expires after 10 minutes. If `add_item` says the upload was not found, upload the photo again.
