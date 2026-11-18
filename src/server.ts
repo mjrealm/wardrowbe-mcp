@@ -8,7 +8,7 @@ import { TokenStore } from "./token-store.js";
 import { sharedUploads, type UploadStore } from "./uploads.js";
 
 export const SERVER_NAME = "wardrowbe-mcp";
-export const SERVER_VERSION = "0.2.0";
+export const SERVER_VERSION = "0.3.0";
 
 /**
  * Module-level, because the HTTP transport builds a server per request. Only one browser sign-in
