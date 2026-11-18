@@ -1,5 +1,5 @@
 {
-  "name": "wardrowbe-mcp",
+  "name": "@mjrealm/wardrowbe-mcp",
   "version": "0.1.0",
   "description": "MCP server for the Wardrowbe wardrobe API. Runs over stdio (npx) or Streamable HTTP.",
   "type": "module",
