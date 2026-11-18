@@ -1,3 +1,5 @@
+import { defaultTokenFile } from "./token-store.js";
+
 export type Transport = "stdio" | "http";
 
 export interface Config {
@@ -8,8 +10,11 @@ export interface Config {
     issuerUrl: string;
     clientId: string;
     clientSecret?: string;
-    refreshToken: string;
+    /** Explicit refresh token. When absent, the stored one is used, or the browser sign-in runs. */
+    refreshToken?: string;
   };
+  /** Where the refresh token is kept between runs. Set only when OIDC is configured. */
+  tokenFile?: string;
   transport: Transport;
   host: string;
   port: number;
@@ -35,13 +40,13 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
 
   const oidcIssuer = env.OIDC_ISSUER_URL?.trim();
   const oidcClient = env.OIDC_CLIENT_ID?.trim();
-  const oidcRefresh = env.OIDC_REFRESH_TOKEN?.trim();
+  // OIDC_REFRESH_TOKEN is optional. Without it, the server signs in through the browser and stores the result.
+  const oidcRefresh = env.OIDC_REFRESH_TOKEN?.trim() || undefined;
   let oidc: Config["oidc"];
+  let tokenFile: string | undefined;
   if (oidcIssuer || oidcClient || oidcRefresh) {
-    if (!oidcIssuer || !oidcClient || !oidcRefresh) {
-      throw new ConfigError(
-        "OIDC needs OIDC_ISSUER_URL, OIDC_CLIENT_ID and OIDC_REFRESH_TOKEN together",
-      );
+    if (!oidcIssuer || !oidcClient) {
+      throw new ConfigError("OIDC needs OIDC_ISSUER_URL and OIDC_CLIENT_ID");
     }
     oidc = {
       issuerUrl: oidcIssuer.replace(/\/+$/, ""),
@@ -49,10 +54,13 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
       clientSecret: env.OIDC_CLIENT_SECRET?.trim() || undefined,
       refreshToken: oidcRefresh,
     };
+    tokenFile = env.WARDROWBE_TOKEN_FILE?.trim() || defaultTokenFile(env);
   }
 
   if (!staticToken && !oidc) {
-    throw new ConfigError("Set WARDROWBE_TOKEN, or the OIDC_* variables to exchange a refresh token");
+    throw new ConfigError(
+      "Set WARDROWBE_TOKEN, or OIDC_ISSUER_URL and OIDC_CLIENT_ID to sign in with your identity provider",
+    );
   }
 
   const transport = (env.MCP_TRANSPORT?.trim() || "stdio") as Transport;
@@ -74,6 +82,7 @@ export function loadConfig(env: NodeJS.ProcessEnv): Config {
     wardrowbeUrl,
     staticToken,
     oidc,
+    tokenFile,
     transport,
     // Bind to loopback unless the caller opts in. Container deployments set MCP_BIND_HOST=0.0.0.0.
     host: env.MCP_BIND_HOST?.trim() || "127.0.0.1",

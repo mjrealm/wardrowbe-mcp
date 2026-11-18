@@ -39,6 +39,8 @@ export interface LoginResult {
 
 const CALLBACK_PATH = "/callback";
 const DEFAULT_TIMEOUT_MS = 5 * 60_000;
+/** Localhost port for the sign-in redirect. Register `http://localhost:8765/callback` with the IdP. */
+export const DEFAULT_LOGIN_PORT = 8765;
 
 /**
  * Runs the one-time sign-in: opens the browser at the issuer's authorize endpoint with PKCE and

@@ -1,6 +1,16 @@
 import type { Config } from "./config.js";
+import type { TokenStore } from "./token-store.js";
 
 export type FetchFn = typeof fetch;
+
+/** How the OIDC path gets a refresh token when it has none: from disk, or from a browser sign-in. */
+export interface SignInHooks {
+  store?: TokenStore;
+  /** Runs the browser sign-in and resolves with a refresh token. */
+  signIn?: () => Promise<string>;
+}
+
+type RefreshResult = { ok: true; idToken: string } | { ok: false; status: number };
 
 export class WardrowbeApiError extends Error {
   constructor(
@@ -31,6 +41,7 @@ export class TokenProvider {
     private readonly config: Config,
     private readonly fetchFn: FetchFn = fetch,
     private readonly now: () => number = Date.now,
+    private readonly hooks: SignInHooks = {},
   ) {
     this.refreshToken = config.oidc?.refreshToken;
   }
@@ -77,14 +88,56 @@ export class TokenProvider {
       throw new Error(`OIDC discovery failed at ${oidc.issuerUrl} (HTTP ${discovery.status})`);
     }
 
+    const first = await this.refresh(meta.token_endpoint, oidc, await this.currentRefreshToken(oidc));
+    if (first.ok) return first.idToken;
+
+    // The issuer rejected the token, so it has expired or been revoked. Sign in again once.
+    // Server errors are not a sign of a bad token, so they are reported as they are.
+    const rejected = first.status === 400 || first.status === 401;
+    if (!rejected || !this.hooks.signIn) {
+      throw new Error(
+        `OIDC refresh failed (HTTP ${first.status}). The refresh token may be expired or revoked.`,
+      );
+    }
+    const second = await this.refresh(meta.token_endpoint, oidc, await this.signIn(oidc));
+    if (second.ok) return second.idToken;
+    throw new Error(`OIDC refresh failed after signing in again (HTTP ${second.status}).`);
+  }
+
+  /** Current refresh token: the in-memory one, then the stored one, then a fresh browser sign-in. */
+  private async currentRefreshToken(oidc: NonNullable<Config["oidc"]>): Promise<string> {
+    if (this.refreshToken) return this.refreshToken;
+    const stored = await this.hooks.store?.load(oidc.issuerUrl, oidc.clientId);
+    if (stored) {
+      this.refreshToken = stored;
+      return stored;
+    }
+    return this.signIn(oidc);
+  }
+
+  /** Runs the browser sign-in and keeps the resulting refresh token. */
+  private async signIn(oidc: NonNullable<Config["oidc"]>): Promise<string> {
+    if (!this.hooks.signIn) {
+      throw new Error("No refresh token is available. Set OIDC_REFRESH_TOKEN, or run `wardrowbe-mcp login`.");
+    }
+    const token = await this.hooks.signIn();
+    await this.remember(oidc, token);
+    return token;
+  }
+
+  private async refresh(
+    tokenEndpoint: string,
+    oidc: NonNullable<Config["oidc"]>,
+    refreshToken: string,
+  ): Promise<RefreshResult> {
     const form = new URLSearchParams({
       grant_type: "refresh_token",
-      refresh_token: this.refreshToken ?? "",
+      refresh_token: refreshToken,
       client_id: oidc.clientId,
     });
     if (oidc.clientSecret) form.set("client_secret", oidc.clientSecret);
 
-    const res = await this.fetchFn(meta.token_endpoint, {
+    const res = await this.fetchFn(tokenEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
       body: form,
@@ -92,14 +145,24 @@ export class TokenProvider {
     const tokens = (await parseJson(res)) as
       | { id_token?: string; refresh_token?: string }
       | undefined;
-    if (!res.ok || !tokens?.id_token) {
-      throw new Error(
-        `OIDC refresh failed (HTTP ${res.status}). The refresh token may be expired or revoked.`,
-      );
+    if (!res.ok || !tokens?.id_token) return { ok: false, status: res.status };
+
+    // Some issuers rotate refresh tokens. Keep the newest one so the next run can use it.
+    if (tokens.refresh_token) await this.remember(oidc, tokens.refresh_token);
+    return { ok: true, idToken: tokens.id_token };
+  }
+
+  /** Keeps a refresh token in memory and in the store. A failed write is logged, not fatal. */
+  private async remember(oidc: NonNullable<Config["oidc"]>, refreshToken: string): Promise<void> {
+    this.refreshToken = refreshToken;
+    const store = this.hooks.store;
+    if (!store) return;
+    try {
+      await store.save({ issuerUrl: oidc.issuerUrl, clientId: oidc.clientId, refreshToken });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`wardrowbe-mcp: could not save the refresh token to ${store.path}: ${message}`);
     }
-    // Some issuers rotate refresh tokens. Keep the newest one in memory.
-    if (tokens.refresh_token) this.refreshToken = tokens.refresh_token;
-    return tokens.id_token;
   }
 }
 

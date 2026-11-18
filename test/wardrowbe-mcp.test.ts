@@ -41,10 +41,13 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ WARDROWBE_URL: BASE })).toThrow(/WARDROWBE_TOKEN/);
   });
 
-  it("rejects partial OIDC settings", () => {
+  it("rejects OIDC settings without an issuer or client ID", () => {
     expect(() =>
       loadConfig({ WARDROWBE_URL: BASE, OIDC_ISSUER_URL: "https://id.example.com" }),
-    ).toThrow(/together/);
+    ).toThrow(/OIDC_CLIENT_ID/);
+    expect(() =>
+      loadConfig({ WARDROWBE_URL: BASE, OIDC_CLIENT_ID: "wardrowbe", OIDC_REFRESH_TOKEN: "rt" }),
+    ).toThrow(/OIDC_ISSUER_URL/);
   });
 
   it("defaults to stdio on loopback and strips trailing slashes", () => {
