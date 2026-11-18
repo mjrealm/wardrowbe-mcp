@@ -191,6 +191,7 @@ describe("MCP tools end to end", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(
       [
         "accept_outfit",
+        "add_item",
         "get_analytics",
         "get_item",
         "list_items",

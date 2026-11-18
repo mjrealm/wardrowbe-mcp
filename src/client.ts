@@ -182,10 +182,19 @@ export class WardrowbeClient {
     return this.request<T>("POST", path, { body });
   }
 
+  /** Sends a multipart form, such as an item with its photo. The boundary header is set by fetch. */
+  postForm<T>(path: string, form: FormData): Promise<T> {
+    return this.request<T>("POST", path, { form });
+  }
+
   private async request<T>(
     method: string,
     path: string,
-    opts: { query?: Record<string, string | number | boolean | undefined>; body?: unknown },
+    opts: {
+      query?: Record<string, string | number | boolean | undefined>;
+      body?: unknown;
+      form?: FormData;
+    },
   ): Promise<T> {
     const url = new URL(`${this.config.wardrowbeUrl}/api/v1${path}`);
     for (const [k, v] of Object.entries(opts.query ?? {})) {
@@ -197,7 +206,9 @@ export class WardrowbeClient {
       Accept: "application/json",
     };
     const init: RequestInit = { method, headers };
-    if (opts.body !== undefined) {
+    if (opts.form) {
+      init.body = opts.form;
+    } else if (opts.body !== undefined) {
       headers["Content-Type"] = "application/json";
       init.body = JSON.stringify(opts.body);
     }

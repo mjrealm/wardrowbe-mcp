@@ -76,6 +76,24 @@ npx -y @mdeleon23/wardrowbe-mcp
 
 Register the server at `http://<host>:8080/mcp` with the header `Authorization: Bearer <MCP_API_KEY>`. `GET /` returns a small info response without auth.
 
+### Adding items from photos
+
+Photos go to the server directly, not through the AI, so the model never has to handle image bytes:
+
+1. The app uploads the photo to `POST /uploads` with the same Bearer key. Send the raw image as the body, with `Content-Type` set to `image/jpeg`, `image/png`, `image/webp`, or `image/heic`. Optionally set `X-Filename` (URL-encoded).
+2. The response is `{"upload_id": "...", "expires_in_seconds": 600}`.
+3. The agent calls `add_item` with that `upload_id`. The upload is used once and then deleted. Uploads over 15 MB are refused, and uploads expire after 10 minutes.
+
+```bash
+curl -s -X POST https://<host>:8080/uploads \
+  -H "Authorization: Bearer <MCP_API_KEY>" \
+  -H "Content-Type: image/jpeg" \
+  -H "X-Filename: blue-shirt.jpg" \
+  --data-binary @blue-shirt.jpg
+```
+
+`add_item` only works over HTTP, because stdio has no way to receive an upload.
+
 ## Tools
 
 | Tool | Wardrowbe endpoint | Notes |
@@ -87,6 +105,7 @@ Register the server at `http://<host>:8080/mcp` with the header `Authorization: 
 | `suggest_outfit` | `POST /outfits/suggest` | Rate limited to about 10 per minute per user. |
 | `accept_outfit` | `POST /outfits/{id}/accept` | |
 | `reject_outfit` | `POST /outfits/{id}/reject` | |
+| `add_item` | `POST /items` | Takes an `upload_id` from `/uploads`. Wardrowbe detects the type unless you pass one. |
 | `get_analytics` | `GET /analytics` | `days` from 7 to 365. |
 
 ## Development

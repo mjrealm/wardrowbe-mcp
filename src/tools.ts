@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WardrowbeClient } from "./client.js";
+import { sharedUploads, type UploadStore } from "./uploads.js";
 
 const uuid = z.string().uuid().describe("Item or outfit UUID");
 const isoDate = z
@@ -22,7 +23,11 @@ async function run(fn: () => Promise<unknown>): Promise<ToolResult> {
 }
 
 /** Registers the Wardrowbe tools on an MCP server. */
-export function registerTools(server: McpServer, client: WardrowbeClient): void {
+export function registerTools(
+  server: McpServer,
+  client: WardrowbeClient,
+  uploads: UploadStore = sharedUploads,
+): void {
   server.registerTool(
     "list_items",
     {
@@ -140,5 +145,37 @@ export function registerTools(server: McpServer, client: WardrowbeClient): void 
       },
     },
     ({ days }) => run(() => client.get("/analytics", { days: days ?? 30 })),
+  );
+
+  server.registerTool(
+    "add_item",
+    {
+      title: "Add a wardrobe item",
+      description:
+        "Add a new item to the wardrobe from a photo. The photo must first be uploaded to the server's upload endpoint, which returns an upload_id. Pass that id here. Wardrowbe detects the type and colors unless skip_ai is true or you pass them.",
+      inputSchema: {
+        upload_id: z.string().uuid().describe("upload_id returned when the photo was uploaded"),
+        type: z.string().optional().describe("Item type, e.g. top, bottom, shoes. Detected if omitted."),
+        subtype: z.string().optional(),
+        name: z.string().max(100).optional(),
+        brand: z.string().max(100).optional(),
+        notes: z.string().max(1000).optional(),
+        colors: z.string().optional().describe("Comma-separated color names"),
+        primary_color: z.string().optional(),
+        favorite: z.boolean().optional(),
+        skip_ai: z.boolean().optional().describe("Skip AI tagging and use only the fields given"),
+      },
+    },
+    ({ upload_id, ...fields }) =>
+      run(async () => {
+        const photo = uploads.take(upload_id);
+        const form = new FormData();
+        const bytes = new Uint8Array(photo.bytes);
+        form.append("image", new Blob([bytes], { type: photo.contentType }), photo.filename);
+        for (const [key, value] of Object.entries(fields)) {
+          if (value !== undefined) form.append(key, String(value));
+        }
+        return client.postForm("/items", form);
+      }),
   );
 }
