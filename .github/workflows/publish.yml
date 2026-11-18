@@ -60,7 +60,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.pr.outputs.merged == 'true'
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Test
         if: steps.pr.outputs.merged == 'true'
