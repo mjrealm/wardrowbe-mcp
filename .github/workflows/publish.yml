@@ -1,0 +1,95 @@
+name: Publish
+
+# Runs after a pull request merges into main. Bumps the version, publishes to npm,
+# pushes the version commit and tag, and creates a GitHub release.
+#
+# Bump size comes from the merged PR's labels: "release:minor" or "release:major".
+# With no label, the bump is a patch.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write        # push the version commit and tag, create the release
+  id-token: write        # npm trusted publishing (OIDC) and provenance
+  pull-requests: read    # look up the merged PR for the commit
+
+concurrency:
+  group: npm-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Skip the version commit this workflow pushes back to main.
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Find the merged pull request
+        id: pr
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Only pull requests trigger a release. Direct pushes are skipped.
+          pr_json=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | .[0] // empty')
+          if [ -z "$pr_json" ]; then
+            echo "No merged pull request for $SHA, skipping release."
+            echo "merged=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          labels=$(echo "$pr_json" | jq -r '.labels[].name')
+          bump=patch
+          if echo "$labels" | grep -qx "release:major"; then
+            bump=major
+          elif echo "$labels" | grep -qx "release:minor"; then
+            bump=minor
+          fi
+          echo "merged=true" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "Merged PR found. Bump: $bump"
+
+      - uses: actions/setup-node@v4
+        if: steps.pr.outputs.merged == 'true'
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+
+      - name: Install dependencies
+        if: steps.pr.outputs.merged == 'true'
+        run: npm ci --ignore-scripts
+
+      - name: Test
+        if: steps.pr.outputs.merged == 'true'
+        run: npm test
+
+      - name: Bump version
+        if: steps.pr.outputs.merged == 'true'
+        id: version
+        env:
+          BUMP: ${{ steps.pr.outputs.bump }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Creates a commit and a vX.Y.Z tag locally. Nothing is pushed until publish succeeds.
+          npm version "$BUMP" -m "chore(release): %s [skip ci]"
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Publish to npm
+        if: steps.pr.outputs.merged == 'true'
+        # Authenticates with the trusted publisher configured on npmjs.com (OIDC), so no token is stored.
+        run: npm publish --provenance --access public
+
+      - name: Push version commit and tag
+        if: steps.pr.outputs.merged == 'true'
+        run: git push --follow-tags origin HEAD:main
+
+      - name: Create GitHub release
+        if: steps.pr.outputs.merged == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: gh release create "v$VERSION" --title "v$VERSION" --generate-notes
