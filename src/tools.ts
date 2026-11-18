@@ -208,4 +208,89 @@ export function registerTools(
         return client.postForm("/items", form);
       }),
   );
+
+  server.registerTool(
+    "get_wardrobe_summary",
+    {
+      title: "Wardrobe summary",
+      description:
+        "A short overview of the wardrobe: item counts, the insights Wardrowbe has noticed, and the most and least worn items. Good first call when a user asks how their wardrobe is doing.",
+      inputSchema: {
+        days: z.number().int().min(7).max(365).optional().describe("Trend window, 7 to 365 days"),
+      },
+    },
+    ({ days }) =>
+      run(async () => {
+        const analytics = await client.get<AnalyticsPayload>("/analytics", { days: days ?? 30 });
+        return {
+          wardrobe: analytics.wardrobe,
+          insights: analytics.insights,
+          most_worn: analytics.most_worn,
+          never_worn: analytics.never_worn,
+        };
+      }),
+  );
+
+  server.registerTool(
+    "get_most_worn_items",
+    {
+      title: "Most worn items",
+      description: "The items worn most often in the trend window. Wardrowbe returns at most 5.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(5).optional().describe("How many items, up to 5"),
+        days: z.number().int().min(7).max(365).optional().describe("Trend window, 7 to 365 days"),
+      },
+    },
+    ({ limit, days }) =>
+      run(async () => {
+        const analytics = await client.get<AnalyticsPayload>("/analytics", { days: days ?? 30 });
+        return { items: analytics.most_worn.slice(0, limit ?? 5) };
+      }),
+  );
+
+  server.registerTool(
+    "get_items_to_wash",
+    {
+      title: "Items to wash",
+      description: "Items worn since their last wash, so they are due for washing.",
+      inputSchema: {
+        limit: z.number().int().min(1).max(100).optional().describe("How many items to return"),
+      },
+    },
+    ({ limit }) =>
+      run(() => client.get("/items", { needs_wash: true, page_size: limit ?? 20 })),
+  );
+
+  server.registerTool(
+    "archive_item",
+    {
+      title: "Archive an item",
+      description:
+        "Archive an item so it is left out of outfit suggestions. It stays in the wardrobe and can be restored. Use this for items that are worn out, given away, or out of season.",
+      inputSchema: {
+        item_id: uuid,
+        reason: z.string().max(200).optional().describe("Why the item is archived, e.g. worn out"),
+      },
+    },
+    ({ item_id, reason }) =>
+      run(() => client.post(`/items/${item_id}/archive`, reason === undefined ? {} : { reason })),
+  );
+
+  server.registerTool(
+    "restore_item",
+    {
+      title: "Restore an archived item",
+      description: "Bring an archived item back into the active wardrobe and outfit suggestions.",
+      inputSchema: { item_id: uuid },
+    },
+    ({ item_id }) => run(() => client.post(`/items/${item_id}/restore`)),
+  );
+}
+
+/** The parts of Wardrowbe's /analytics response that these tools use. */
+interface AnalyticsPayload {
+  wardrobe: unknown;
+  insights: string[];
+  most_worn: unknown[];
+  never_worn: unknown[];
 }

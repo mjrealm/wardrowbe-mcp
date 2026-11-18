@@ -110,6 +110,15 @@ An agent can also do the whole thing through MCP with the `upload_photo` tool, w
 | `upload_photo` | `POST /uploads` (in-process) | Takes a small photo as base64 (up to 300 KB) and returns an `upload_id`. |
 | `add_item` | `POST /items` | Takes an `upload_id` from `upload_photo` or `/uploads`. Wardrowbe detects the type unless you pass one. |
 | `get_analytics` | `GET /analytics` | `days` from 7 to 365. |
+| `get_wardrobe_summary` | `GET /analytics` | Counts, insights, most and never worn items. Good first call. |
+| `get_most_worn_items` | `GET /analytics` | Up to 5 items, from the same trend window. |
+| `get_items_to_wash` | `GET /items?needs_wash=true` | Items worn since their last wash. |
+| `archive_item` | `POST /items/{id}/archive` | Hides an item from suggestions. Reversible. Takes an optional `reason`. |
+| `restore_item` | `POST /items/{id}/restore` | Brings an archived item back. |
+
+## Skill
+
+The server publishes `skill://wardrowbe-skill/SKILL.md` as an MCP resource. It explains which tool to use for each task, how to add an item from a photo (including re-encoding large photos), and how archiving works. Clients that install skills pick it up automatically. The source is in [`skill/SKILL.md`](skill/SKILL.md).
 
 ## Development
 
