@@ -1,6 +1,6 @@
 {
   "name": "@mdeleon23/wardrowbe-mcp",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "MCP server for the Wardrowbe wardrobe API. Runs over stdio (npx) or Streamable HTTP.",
   "type": "module",
   "bin": {
