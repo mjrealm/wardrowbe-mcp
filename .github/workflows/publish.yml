@@ -1,17 +1,17 @@
 name: Publish
 
-# Runs after a pull request merges into main. Bumps the version, publishes to npm,
-# pushes the version commit and tag, and creates a GitHub release.
+# Runs after a pull request merges into main. Publishes the version already in package.json.
+# The version bump is part of the pull request itself, so this workflow never pushes to main.
 #
-# Bump size comes from the merged PR's labels: "release:minor" or "release:major".
-# With no label, the bump is a patch.
+# If that version is already on npm, the run skips the publish. Merging a PR that doesn't
+# bump the version is safe and does nothing.
 
 on:
   push:
     branches: [main]
 
 permissions:
-  contents: write        # push the version commit and tag, create the release
+  contents: write        # push the release tag and create the GitHub release
   id-token: write        # npm trusted publishing (OIDC) and provenance
   pull-requests: read    # look up the merged PR for the commit
 
@@ -21,8 +21,6 @@ concurrency:
 
 jobs:
   publish:
-    # Skip the version commit this workflow pushes back to main.
-    if: "!contains(github.event.head_commit.message, '[skip ci]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,23 +32,14 @@ jobs:
           REPO: ${{ github.repository }}
           SHA: ${{ github.sha }}
         run: |
-          # Only pull requests trigger a release. Direct pushes are skipped.
-          pr_json=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | .[0] // empty')
-          if [ -z "$pr_json" ]; then
+          # Only a merged pull request triggers a release. Direct pushes are skipped.
+          merged=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '[.[] | select(.merged_at != null)] | length')
+          if [ "$merged" -gt 0 ]; then
+            echo "merged=true" >> "$GITHUB_OUTPUT"
+          else
             echo "No merged pull request for $SHA, skipping release."
             echo "merged=false" >> "$GITHUB_OUTPUT"
-            exit 0
           fi
-          labels=$(echo "$pr_json" | jq -r '.labels[].name')
-          bump=patch
-          if echo "$labels" | grep -qx "release:major"; then
-            bump=major
-          elif echo "$labels" | grep -qx "release:minor"; then
-            bump=minor
-          fi
-          echo "merged=true" >> "$GITHUB_OUTPUT"
-          echo "bump=$bump" >> "$GITHUB_OUTPUT"
-          echo "Merged PR found. Bump: $bump"
 
       - uses: actions/setup-node@v4
         if: steps.pr.outputs.merged == 'true'
@@ -58,38 +47,47 @@ jobs:
           node-version: 24
           registry-url: https://registry.npmjs.org
 
-      - name: Install dependencies
+      - name: Read package name and version
         if: steps.pr.outputs.merged == 'true'
+        id: pkg
+        run: |
+          echo "name=$(node -p 'require("./package.json").name')" >> "$GITHUB_OUTPUT"
+          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if this version is already on npm
+        if: steps.pr.outputs.merged == 'true'
+        id: exists
+        env:
+          NAME: ${{ steps.pkg.outputs.name }}
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          if npm view "$NAME@$VERSION" version >/dev/null 2>&1; then
+            echo "$NAME@$VERSION is already on npm. Bump the version in your pull request to release."
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.pr.outputs.merged == 'true' && steps.exists.outputs.exists == 'false'
+        # Install scripts are skipped. Nothing here needs them, and this job holds publish rights.
         run: npm ci --ignore-scripts
 
       - name: Test
-        if: steps.pr.outputs.merged == 'true'
+        if: steps.pr.outputs.merged == 'true' && steps.exists.outputs.exists == 'false'
         run: npm test
 
-      - name: Bump version
-        if: steps.pr.outputs.merged == 'true'
-        id: version
-        env:
-          BUMP: ${{ steps.pr.outputs.bump }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Creates a commit and a vX.Y.Z tag locally. Nothing is pushed until publish succeeds.
-          npm version "$BUMP" -m "chore(release): %s [skip ci]"
-          echo "version=$(node -p 'require("./package.json").version')" >> "$GITHUB_OUTPUT"
-
       - name: Publish to npm
-        if: steps.pr.outputs.merged == 'true'
+        if: steps.pr.outputs.merged == 'true' && steps.exists.outputs.exists == 'false'
         # Authenticates with the trusted publisher configured on npmjs.com (OIDC), so no token is stored.
         run: npm publish --provenance --access public
 
-      - name: Push version commit and tag
-        if: steps.pr.outputs.merged == 'true'
-        run: git push --follow-tags origin HEAD:main
-
-      - name: Create GitHub release
-        if: steps.pr.outputs.merged == 'true'
+      - name: Tag and create the GitHub release
+        if: steps.pr.outputs.merged == 'true' && steps.exists.outputs.exists == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
-        run: gh release create "v$VERSION" --title "v$VERSION" --generate-notes
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          git tag "v$VERSION" "$GITHUB_SHA"
+          git push origin "v$VERSION"
+          gh release create "v$VERSION" --title "v$VERSION" --generate-notes
