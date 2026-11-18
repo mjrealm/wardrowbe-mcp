@@ -199,6 +199,7 @@ describe("MCP tools end to end", () => {
         "log_wear",
         "reject_outfit",
         "suggest_outfit",
+        "upload_photo",
       ].sort(),
     );
 
