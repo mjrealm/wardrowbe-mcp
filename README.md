@@ -16,7 +16,7 @@ You need your Wardrowbe URL and an OIDC client for Wardrowbe. Pocket ID works.
      "mcpServers": {
        "wardrowbe": {
          "command": "npx",
-         "args": ["-y", "@mjrealm/wardrowbe-mcp"],
+         "args": ["-y", "@mdeleon23/wardrowbe-mcp"],
          "env": {
            "WARDROWBE_URL": "https://wardrowbe.example.com",
            "OIDC_ISSUER_URL": "https://pocket.example.com",
@@ -54,7 +54,7 @@ With OIDC set, the server signs in through your browser the first time a tool ne
 The browser sign-in needs a browser on the same machine as the server. On a headless host or in a container, sign in elsewhere and pass the token in:
 
 ```bash
-npx -y @mjrealm/wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
+npx -y @mdeleon23/wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
 ```
 
 Then set `OIDC_REFRESH_TOKEN` to the contents of `refresh-token.txt`, and delete the file.
@@ -71,7 +71,7 @@ WARDROWBE_URL=https://wardrowbe.example.com \
 OIDC_ISSUER_URL=https://pocket.example.com \
 OIDC_CLIENT_ID=wardrowbe \
 OIDC_REFRESH_TOKEN=<refresh-token> \
-npx -y @mjrealm/wardrowbe-mcp
+npx -y @mdeleon23/wardrowbe-mcp
 ```
 
 Register the server at `http://<host>:8080/mcp` with the header `Authorization: Bearer <MCP_API_KEY>`. `GET /` returns a small info response without auth.
