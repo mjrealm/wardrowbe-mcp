@@ -6,7 +6,13 @@ import type { Server } from "node:http";
 import type { Config } from "../src/config.js";
 import { createMcpHttpServer } from "../src/http.js";
 import { createServer } from "../src/server.js";
-import { MAX_PENDING_UPLOADS, MAX_UPLOAD_BYTES, UploadError, UploadStore } from "../src/uploads.js";
+import {
+  MAX_PENDING_UPLOADS,
+  MAX_TOOL_UPLOAD_BYTES,
+  MAX_UPLOAD_BYTES,
+  UploadError,
+  UploadStore,
+} from "../src/uploads.js";
 
 const BASE = "https://wardrowbe.example.com";
 const KEY = "test-key";
@@ -180,5 +186,67 @@ describe("add_item tool", () => {
     });
     expect(result.isError).toBe(true);
     expect((result.content as { text: string }[])[0].text).toMatch(/not found|expired/);
+  });
+});
+
+describe("upload_photo tool", () => {
+  async function connect(fetchFn: typeof fetch, store: UploadStore) {
+    const server = createServer(config(), fetchFn, store);
+    const client = new Client({ name: "test", version: "0.0.0" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(a), client.connect(b)]);
+    return client;
+  }
+
+  it("turns base64 into a stored photo that add_item can send to Wardrowbe", async () => {
+    const store = new UploadStore();
+    let sent: FormData | undefined;
+    const fetchFn = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === `${BASE}/api/v1/items`) {
+        sent = init?.body as FormData;
+        return json({ id: "item-2" }, 201);
+      }
+      throw new Error(`unexpected ${String(input)}`);
+    });
+    const client = await connect(fetchFn as unknown as typeof fetch, store);
+
+    const uploaded = await client.callTool({
+      name: "upload_photo",
+      arguments: {
+        image_base64: Buffer.from("tiny-jpeg").toString("base64"),
+        mime_type: "image/jpeg",
+        filename: "tee.jpg",
+      },
+    });
+    expect(uploaded.isError).toBeFalsy();
+    const { upload_id } = JSON.parse((uploaded.content as { text: string }[])[0].text);
+
+    const added = await client.callTool({ name: "add_item", arguments: { upload_id } });
+    expect(added.isError).toBeFalsy();
+    const image = sent!.get("image") as File;
+    expect(image.name).toBe("tee.jpg");
+    expect(Buffer.from(await image.arrayBuffer()).toString()).toBe("tiny-jpeg");
+  });
+
+  it("refuses photos over the tool limit and says to use the upload endpoint", async () => {
+    const client = await connect(vi.fn() as unknown as typeof fetch, new UploadStore());
+    const big = Buffer.alloc(MAX_TOOL_UPLOAD_BYTES + 1).toString("base64");
+
+    const result = await client.callTool({
+      name: "upload_photo",
+      arguments: { image_base64: big, mime_type: "image/jpeg" },
+    });
+    expect(result.isError).toBe(true);
+    expect((result.content as { text: string }[])[0].text).toMatch(/over the 300 KB limit/);
+  });
+
+  it("rejects an unknown mime type before storing anything", async () => {
+    const store = new UploadStore();
+    const client = await connect(vi.fn() as unknown as typeof fetch, store);
+    const result = await client.callTool({
+      name: "upload_photo",
+      arguments: { image_base64: "AAAA", mime_type: "text/plain" },
+    });
+    expect(result.isError).toBe(true);
   });
 });

@@ -1,7 +1,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import type { WardrowbeClient } from "./client.js";
-import { sharedUploads, type UploadStore } from "./uploads.js";
+import {
+  ALLOWED_IMAGE_TYPES,
+  MAX_TOOL_UPLOAD_BYTES,
+  sharedUploads,
+  type UploadStore,
+} from "./uploads.js";
 
 const uuid = z.string().uuid().describe("Item or outfit UUID");
 const isoDate = z
@@ -145,6 +150,31 @@ export function registerTools(
       },
     },
     ({ days }) => run(() => client.get("/analytics", { days: days ?? 30 })),
+  );
+
+  server.registerTool(
+    "upload_photo",
+    {
+      title: "Upload a photo",
+      description: `Upload a photo of a clothing item so add_item can use it. Pass the image as base64. Keep it small: the limit is ${MAX_TOOL_UPLOAD_BYTES / 1024} KB, so use a reduced-size image. Returns an upload_id for add_item. The id is good for 10 minutes and works once.`,
+      inputSchema: {
+        image_base64: z.string().min(1).describe("The image bytes, base64-encoded, without a data: prefix"),
+        mime_type: z.enum(ALLOWED_IMAGE_TYPES as [string, ...string[]]).describe("Image type"),
+        filename: z.string().max(200).optional().describe("File name, e.g. blue-shirt.jpg"),
+      },
+    },
+    ({ image_base64, mime_type, filename }) =>
+      run(async () => {
+        const bytes = Buffer.from(image_base64, "base64");
+        if (bytes.length === 0) throw new Error("The image_base64 value decoded to no data.");
+        if (bytes.length > MAX_TOOL_UPLOAD_BYTES) {
+          throw new Error(
+            `The photo is ${Math.round(bytes.length / 1024)} KB, over the ${MAX_TOOL_UPLOAD_BYTES / 1024} KB limit for upload_photo. Send a smaller image.`,
+          );
+        }
+        const upload_id = uploads.put({ bytes, contentType: mime_type, filename: filename ?? "photo.jpg" });
+        return { upload_id, expires_in_seconds: 600 };
+      }),
   );
 
   server.registerTool(

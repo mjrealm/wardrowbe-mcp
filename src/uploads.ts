@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 export const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"];
 /** Largest photo the upload endpoint accepts. Phone photos are often 3 to 8 MB. */
 export const MAX_UPLOAD_BYTES = 15 * 1024 * 1024;
+/**
+ * Largest photo the upload_photo tool accepts. The model has to write the whole image as base64
+ * inside the tool call, so this stays small. Full-size photos go through POST /uploads.
+ */
+export const MAX_TOOL_UPLOAD_BYTES = 300 * 1024;
 export const UPLOAD_TTL_MS = 10 * 60_000;
 /** Caps how many photos can wait at once, so a flood of uploads cannot fill memory. */
 export const MAX_PENDING_UPLOADS = 50;

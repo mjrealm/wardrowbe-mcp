@@ -92,7 +92,9 @@ curl -s -X POST https://<host>:8080/uploads \
   --data-binary @blue-shirt.jpg
 ```
 
-`add_item` only works over HTTP, because stdio has no way to receive an upload.
+An agent can also do the whole thing through MCP with the `upload_photo` tool, which takes the photo as base64 (up to 300 KB) and returns an `upload_id` for `add_item`. The model has to write the image out in full, so keep photos small for this route. Full-size phone photos should go through `/uploads`.
+
+`add_item` works over stdio too, as long as the `upload_id` came from `upload_photo` in the same server process. `/uploads` is HTTP only.
 
 ## Tools
 
@@ -105,7 +107,8 @@ curl -s -X POST https://<host>:8080/uploads \
 | `suggest_outfit` | `POST /outfits/suggest` | Rate limited to about 10 per minute per user. |
 | `accept_outfit` | `POST /outfits/{id}/accept` | |
 | `reject_outfit` | `POST /outfits/{id}/reject` | |
-| `add_item` | `POST /items` | Takes an `upload_id` from `/uploads`. Wardrowbe detects the type unless you pass one. |
+| `upload_photo` | `POST /uploads` (in-process) | Takes a small photo as base64 (up to 300 KB) and returns an `upload_id`. |
+| `add_item` | `POST /items` | Takes an `upload_id` from `upload_photo` or `/uploads`. Wardrowbe detects the type unless you pass one. |
 | `get_analytics` | `GET /analytics` | `days` from 7 to 365. |
 
 ## Development
