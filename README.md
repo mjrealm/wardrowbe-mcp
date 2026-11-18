@@ -8,7 +8,7 @@ Requires Node.js 20 or newer.
 
 You need your Wardrowbe URL and an OIDC client for Wardrowbe. Pocket ID works.
 
-1. In your IdP, create a public client with PKCE. Allow the scopes `openid profile email offline_access`, and add the redirect URI `http://localhost:8765/callback`.
+1. In your IdP, create an OIDC client. Allow the scopes `openid profile email offline_access`, and add the redirect URI `http://localhost:8765/callback`. A public client with PKCE needs no secret. A confidential client (the IdP issues a client secret) also needs `OIDC_CLIENT_SECRET` in the server's `env` and at login, as shown below.
 2. Add the server to your MCP client. For Claude Desktop or Claude Code:
 
    ```json
@@ -57,7 +57,16 @@ The browser sign-in needs a browser on the same machine as the server. On a head
 npx -y @mdeleon23/wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
 ```
 
-Then set `OIDC_REFRESH_TOKEN` to the contents of `refresh-token.txt`, and delete the file.
+For a confidential client, put the secret in the environment instead of on the command line. The token goes to stdout alone, so the redirect captures just the value:
+
+```bash
+OIDC_CLIENT_SECRET=<client-secret> \
+npx -y @mdeleon23/wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
+```
+
+Then set `OIDC_REFRESH_TOKEN` to the contents of `refresh-token.txt`, and delete the file. The server also needs the same `OIDC_CLIENT_SECRET` alongside `OIDC_REFRESH_TOKEN`.
+
+If login fails with `Token exchange failed (HTTP 401: invalid_client)`, the client is confidential and the secret is missing or wrong.
 
 ## HTTP transport
 
