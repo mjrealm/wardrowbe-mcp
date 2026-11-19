@@ -18,7 +18,7 @@ Setup has four steps: create an OIDC client, get a refresh token, add the server
 
 In your identity provider:
 
-1. Create a **public** client that uses PKCE. For a confidential client, also set `OIDC_CLIENT_SECRET` in step 3.
+1. Create a client. A **public** client uses PKCE and has no secret. A **confidential** client has a client secret. Both work. If yours is confidential, you'll set `OIDC_CLIENT_SECRET` in steps 2 and 3.
 2. Allow the scopes `openid profile email offline_access`. `offline_access` is required. Without it the provider returns no refresh token.
 3. Add the redirect URI `http://localhost:8765/callback` exactly as written.
 4. Note two values: the issuer URL (for example `https://pocket.example.com`) and the client ID (for example `wardrowbe`).
@@ -28,6 +28,14 @@ In your identity provider:
 Run this on a computer with a web browser. It can be your laptop, even if the MCP server runs somewhere else. Port `8765` must be free.
 
 Run it from a folder outside any project, such as your home directory. Running it inside a clone of this repository fails with `sh: wardrowbe-mcp: command not found`.
+
+If your client is confidential, set the secret in your shell first. `read -s` keeps it out of your shell history and off the command line. Type the secret when prompted and press Enter. Skip this for a public client.
+
+```bash
+read -s OIDC_CLIENT_SECRET && export OIDC_CLIENT_SECRET
+```
+
+Then run the login. It reads `OIDC_CLIENT_SECRET` from the environment automatically.
 
 ```bash
 cd ~
@@ -68,7 +76,7 @@ For Claude Desktop or Claude Code, add this to your MCP config. Replace `<refres
 
 Save the config, then delete `refresh-token.txt`. The token now lives only in your MCP config.
 
-If you use a confidential client, also add `"OIDC_CLIENT_SECRET": "<client-secret>"` to `env`.
+If you use a confidential client, also add `"OIDC_CLIENT_SECRET": "<client-secret>"` to `env`. Use the same secret as in step 2. The server needs it to refresh the token, so a token from a confidential client won't work without it.
 
 To use a plain access token instead, set `WARDROWBE_TOKEN` in place of the `OIDC_*` variables. It expires, so OIDC is better for regular use.
 
@@ -83,6 +91,9 @@ The client doesn't allow `offline_access`. Enable that scope on the client, then
 
 **`sh: wardrowbe-mcp: command not found`**
 You ran step 2 from inside a project folder, most likely this repository. Run it from another folder, such as your home directory.
+
+**`Token exchange failed (HTTP 401: invalid_client)`**
+The client is confidential, and `OIDC_CLIENT_SECRET` is missing or wrong at login. Set the secret as shown in step 2, then run the login again.
 
 **Port 8765 is in use, or the browser redirect never arrives**
 Another program is using port `8765`. Stop it, then repeat step 2. The redirect URI must still be `http://localhost:8765/callback`.
