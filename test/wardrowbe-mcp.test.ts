@@ -99,7 +99,7 @@ describe("TokenProvider", () => {
       if (url.endsWith("/.well-known/openid-configuration")) {
         return json({ token_endpoint: "https://id.example.com/token" });
       }
-      if (url === "https://id.example.com/token") return json({ id_token: "idt" });
+      if (url === "https://id.example.com/token") return json({ id_token: jwt(exp) });
       if (url === `${BASE}/api/v1/auth/sync`) return json({ access_token: jwt(exp) });
       throw new Error(`unexpected ${url}`);
     });
@@ -115,6 +115,12 @@ describe("TokenProvider", () => {
 
     expect(await tokens.getToken()).toBe(jwt(exp));
     expect(await tokens.getToken()).toBe(jwt(exp));
+    // /auth/sync needs external_id and display_name, taken from the id token's claims.
+    const syncCall = fetchFn.mock.calls.find(([input]) => String(input).endsWith("/auth/sync"));
+    expect(JSON.parse(String(syncCall?.[1]?.body))).toMatchObject({
+      external_id: "u1",
+      display_name: "User",
+    });
     // Discovery, token refresh and sync happen once; the second call is served from cache.
     expect(fetchFn).toHaveBeenCalledTimes(3);
 
@@ -126,7 +132,7 @@ describe("TokenProvider", () => {
       if (url.endsWith("/.well-known/openid-configuration")) {
         return json({ token_endpoint: "https://id.example.com/token" });
       }
-      if (url === "https://id.example.com/token") return json({ id_token: "idt2" });
+      if (url === "https://id.example.com/token") return json({ id_token: jwt(freshExp) });
       return json({ access_token: jwt(freshExp) });
     });
     expect(await tokens.getToken()).toBe(jwt(freshExp));
