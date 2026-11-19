@@ -63,10 +63,24 @@ export class TokenProvider {
     if (!oidc) throw new Error("No OIDC configuration");
 
     const idToken = await this.refreshIdToken(oidc);
+    const claims = jwtClaims(idToken);
+    // Wardrowbe's /auth/sync requires external_id and display_name next to the id token.
+    if (typeof claims.sub !== "string" || !claims.sub) {
+      throw new Error("The ID token has no sub claim, so Wardrowbe cannot identify the user.");
+    }
+    const email = typeof claims.email === "string" ? claims.email : undefined;
+    const name = [claims.name, claims.preferred_username, email?.split("@")[0]].find(
+      (v): v is string => typeof v === "string" && v.trim() !== "",
+    );
     const res = await this.fetchFn(`${this.config.wardrowbeUrl}/api/v1/auth/sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
-      body: JSON.stringify({ id_token: idToken }),
+      body: JSON.stringify({
+        id_token: idToken,
+        external_id: claims.sub,
+        email,
+        display_name: name ?? "User",
+      }),
     });
     const body = (await parseJson(res)) as { access_token?: string } | undefined;
     if (!res.ok || !body?.access_token) {
@@ -238,15 +252,19 @@ function describe(body: unknown, res: Response): string {
 }
 
 /** Milliseconds until a JWT's exp claim, or undefined when it has none. Signature is not checked. */
-function jwtTtlMs(jwt: string, now: () => number): number | undefined {
+/** Reads the claims from a JWT's payload. The signature is not checked; Wardrowbe verifies it. */
+function jwtClaims(jwt: string): Record<string, unknown> {
   const payload = jwt.split(".")[1];
-  if (!payload) return undefined;
+  if (!payload) return {};
   try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
-      exp?: number;
-    };
-    return typeof claims.exp === "number" ? claims.exp * 1000 - now() : undefined;
+    const claims: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    return claims && typeof claims === "object" ? (claims as Record<string, unknown>) : {};
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+function jwtTtlMs(jwt: string, now: () => number): number | undefined {
+  const exp = jwtClaims(jwt).exp;
+  return typeof exp === "number" ? exp * 1000 - now() : undefined;
 }

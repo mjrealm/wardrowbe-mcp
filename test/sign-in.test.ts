@@ -46,7 +46,7 @@ function fakeServers(acceptedRefresh: string[], rotateTo?: string) {
       const refresh = new URLSearchParams(String(init?.body)).get("refresh_token") ?? "";
       refreshesSeen.push(refresh);
       if (!acceptedRefresh.includes(refresh)) return json({ error: "invalid_grant" }, 400);
-      return json({ id_token: "idt", refresh_token: rotateTo });
+      return json({ id_token: jwt(9_999_999_999), refresh_token: rotateTo });
     }
     if (url === `${BASE}/api/v1/auth/sync`) return json({ access_token: jwt(9_999_999_999) });
     throw new Error(`unexpected ${url}`);
