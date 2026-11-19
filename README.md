@@ -6,30 +6,94 @@ Requires Node.js 20 or newer.
 
 ## Quick start
 
-You need your Wardrowbe URL and an OIDC client for Wardrowbe. Pocket ID works.
+You need:
 
-1. In your IdP, create a public client with PKCE. Allow the scopes `openid profile email offline_access`, and add the redirect URI `http://localhost:8765/callback`.
-2. Add the server to your MCP client. For Claude Desktop or Claude Code:
+- Node.js 20 or newer
+- Your Wardrowbe URL, for example `https://wardrowbe.example.com`
+- An OIDC identity provider that runs Wardrowbe sign-in. Pocket ID works.
 
-   ```json
-   {
-     "mcpServers": {
-       "wardrowbe": {
-         "command": "npx",
-         "args": ["-y", "@mdeleon23/wardrowbe-mcp"],
-         "env": {
-           "WARDROWBE_URL": "https://wardrowbe.example.com",
-           "OIDC_ISSUER_URL": "https://pocket.example.com",
-           "OIDC_CLIENT_ID": "wardrowbe"
-         }
-       }
-     }
-   }
-   ```
+Setup has four steps: create an OIDC client, get a refresh token, add the server to your MCP client, and check that it works.
 
-3. Call `list_items` from your client. The first time, your browser opens for sign-in. After that, the refresh token is saved and you won't be asked again.
+### Step 1: Create an OIDC client
+
+In your identity provider:
+
+1. Create a **public** client that uses PKCE. For a confidential client, also set `OIDC_CLIENT_SECRET` in step 3.
+2. Allow the scopes `openid profile email offline_access`. `offline_access` is required. Without it the provider returns no refresh token.
+3. Add the redirect URI `http://localhost:8765/callback` exactly as written.
+4. Note two values: the issuer URL (for example `https://pocket.example.com`) and the client ID (for example `wardrowbe`).
+
+### Step 2: Get a refresh token
+
+Run this on a computer with a web browser. It can be your laptop, even if the MCP server runs somewhere else. Port `8765` must be free.
+
+Run it from a folder outside any project, such as your home directory. Running it inside a clone of this repository fails with `sh: wardrowbe-mcp: command not found`.
+
+```bash
+cd ~
+npx -y @mdeleon23/wardrowbe-mcp@0.3.0 login \
+  --issuer https://pocket.example.com \
+  --client-id wardrowbe \
+  > refresh-token.txt
+chmod 600 refresh-token.txt
+```
+
+The command pins `@0.3.0`, the release this step was checked against. You can drop the pin to use the latest release.
+
+1. The command prints progress messages to your terminal and tries to open the provider's sign-in page in your browser. If the browser doesn't open, copy the URL from the terminal into a browser yourself.
+2. Sign in and approve the request.
+3. The browser then redirects to `localhost:8765`. The terminal prints `Refresh token printed to stdout`. If you see an error instead, see [Troubleshooting](#troubleshooting).
+4. `refresh-token.txt` now contains the token. Treat it like a password.
+
+### Step 3: Add the server to your MCP client
+
+For Claude Desktop or Claude Code, add this to your MCP config. Replace `<refresh-token>` with the contents of `refresh-token.txt`:
+
+```json
+{
+  "mcpServers": {
+    "wardrowbe": {
+      "command": "npx",
+      "args": ["-y", "@mdeleon23/wardrowbe-mcp"],
+      "env": {
+        "WARDROWBE_URL": "https://wardrowbe.example.com",
+        "OIDC_ISSUER_URL": "https://pocket.example.com",
+        "OIDC_CLIENT_ID": "wardrowbe",
+        "OIDC_REFRESH_TOKEN": "<refresh-token>"
+      }
+    }
+  }
+}
+```
+
+Save the config, then delete `refresh-token.txt`. The token now lives only in your MCP config.
+
+If you use a confidential client, also add `"OIDC_CLIENT_SECRET": "<client-secret>"` to `env`.
 
 To use a plain access token instead, set `WARDROWBE_TOKEN` in place of the `OIDC_*` variables. It expires, so OIDC is better for regular use.
+
+### Step 4: Check that it works
+
+Restart your MCP client, then ask it to call `get_wardrobe_summary`. It should return your item counts without asking you to sign in. If it reports a token or sign-in error, see [Troubleshooting](#troubleshooting).
+
+## Troubleshooting
+
+**"The identity provider returned no refresh_token"**
+The client doesn't allow `offline_access`. Enable that scope on the client, then repeat step 2.
+
+**`sh: wardrowbe-mcp: command not found`**
+You ran step 2 from inside a project folder, most likely this repository. Run it from another folder, such as your home directory.
+
+**Port 8765 is in use, or the browser redirect never arrives**
+Another program is using port `8765`. Stop it, then repeat step 2. The redirect URI must still be `http://localhost:8765/callback`.
+
+**"OIDC refresh failed" or "The refresh token may be expired or revoked"**
+The token is no longer valid. Repeat step 2, then replace `OIDC_REFRESH_TOKEN` in your MCP config with the new token and restart the client.
+
+If your provider rotates refresh tokens, the server saves each new token to `WARDROWBE_TOKEN_FILE`. At startup, though, `OIDC_REFRESH_TOKEN` takes priority over that file. If sign-in worked before and fails after a restart, repeat step 2 and update the config.
+
+**A tool call starts a browser sign-in, or fails without one**
+The server can start a browser sign-in by itself the first time a tool needs a token, but that path has not been reliable. Don't rely on it. Complete step 2 ahead of time and set `OIDC_REFRESH_TOKEN`.
 
 ## Configuration
 
@@ -40,7 +104,7 @@ To use a plain access token instead, set `WARDROWBE_TOKEN` in place of the `OIDC
 | `OIDC_ISSUER_URL` | or token | | OIDC issuer, e.g. `https://pocket.example.com`. |
 | `OIDC_CLIENT_ID` | with OIDC | | OIDC client ID. |
 | `OIDC_CLIENT_SECRET` | no | | Only for confidential clients. |
-| `OIDC_REFRESH_TOKEN` | no | | Use this refresh token instead of the saved one. For headless hosts (see below). |
+| `OIDC_REFRESH_TOKEN` | no | | Refresh token from step 2 of the Quick start. Takes priority over the saved one. |
 | `WARDROWBE_TOKEN_FILE` | no | `~/.config/wardrowbe-mcp/refresh-token.json` | Where the refresh token is saved. |
 | `MCP_TRANSPORT` | no | `stdio` | `stdio` or `http`. |
 | `MCP_BIND_HOST` | no | `127.0.0.1` | Address for HTTP. Use `0.0.0.0` in containers. |
@@ -49,15 +113,9 @@ To use a plain access token instead, set `WARDROWBE_TOKEN` in place of the `OIDC
 
 ## How sign-in works
 
-With OIDC set, the server signs in through your browser the first time a tool needs a token. It catches the redirect on `localhost:8765`, then saves the refresh token to `WARDROWBE_TOKEN_FILE` with owner-only permissions. Later runs reuse it. If the token is revoked, the server signs in once more.
+The server turns the refresh token into a short-lived access token before each batch of calls. It takes the refresh token from `OIDC_REFRESH_TOKEN` if you set it, and otherwise from `WARDROWBE_TOKEN_FILE`. If the provider issues a new refresh token, the server saves it to that file.
 
-The browser sign-in needs a browser on the same machine as the server. On a headless host or in a container, sign in elsewhere and pass the token in:
-
-```bash
-npx -y @mdeleon23/wardrowbe-mcp login --issuer https://pocket.example.com --client-id wardrowbe > refresh-token.txt
-```
-
-Then set `OIDC_REFRESH_TOKEN` to the contents of `refresh-token.txt`, and delete the file.
+Step 2 of the Quick start is the supported way to get a refresh token. This works on headless hosts and in containers too: sign in on any machine with a browser, then pass the token in with `OIDC_REFRESH_TOKEN`.
 
 ## HTTP transport
 
