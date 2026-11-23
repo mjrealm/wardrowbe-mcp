@@ -18,7 +18,7 @@ docker run -p 8080:8080 -v wardrowbe-mcp:/data \
   -e WARDROWBE_URL=https://wardrowbe.example.com \
   -e OIDC_ISSUER_URL=https://pocket.example.com \
   -e OIDC_CLIENT_ID=wardrowbe \
-  ghcr.io/<owner>/wardrowbe-mcp:latest
+  ghcr.io/mjrealm/wardrowbe-mcp:latest
 ```
 
 Add `https://wardrowbe-mcp.example.com/mcp` as a server in your MCP client (MCPHub, Claude, and so on). The client starts a sign-in, you log in with Pocket ID once, and that is it. There is no refresh token to fetch or paste.
@@ -27,10 +27,23 @@ Confidential OIDC client? Also set `OIDC_CLIENT_SECRET`.
 
 ## Image
 
-Every merge to `main` runs the tests and publishes a multi-arch image (amd64, arm64) to GitHub Container Registry through [.github/workflows/release.yml](.github/workflows/release.yml):
+Images are published to GitHub Container Registry by [.github/workflows/release.yml](.github/workflows/release.yml), after the tests pass. The image is multi-arch (amd64, arm64).
 
-- `ghcr.io/<owner>/wardrowbe-mcp:latest`: the newest build.
-- `ghcr.io/<owner>/wardrowbe-mcp:sha-<short>`: one commit, for pinned deploys.
+| Tag | When | Use it for |
+| --- | --- | --- |
+| `ghcr.io/mjrealm/wardrowbe-mcp:1.2.3` | git tag `v1.2.3` | Pinned, repeatable deploys. |
+| `...:1.2` | git tag `v1.2.x` | Patch updates only. |
+| `...:1` | git tag `v1.x.y` (from 1.0.0) | Minor and patch updates. |
+| `...:latest` | every push to `main` | The newest build, which may be unreleased. |
+| `...:sha-<short>` | every push to `main` | One exact commit. |
+
+Versions follow [semantic versioning](https://semver.org). To release, bump `version` in `pyproject.toml`, then tag it:
+
+```bash
+git tag v0.2.0 && git push origin v0.2.0
+```
+
+The workflow fails if the tag and `pyproject.toml` disagree.
 
 The package is private until you make it public in its GitHub package settings. A private image needs a pull secret where you run it. To build locally instead: `docker build -t wardrowbe-mcp .`.
 
