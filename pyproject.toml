@@ -1,6 +1,6 @@
 [project]
 name = "wardrowbe-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "HTTP MCP server for Wardrowbe, with a photo upload endpoint. Meant to run as a pod next to Wardrowbe."
 readme = "README.md"
 license = { file = "LICENSE" }
