@@ -123,3 +123,12 @@ def test_the_api_key_still_works_for_mcp_and_uploads(tmp_path):
         r = call(c, KEY)
         assert r.status_code == 200 and not r.json()["result"].get("isError"), r.text
         assert world.refresh_seen == ["env-rt"]  # The default user, from the config.
+
+
+def test_clients_can_register_with_standard_oidc_scopes(tmp_path):
+    with TestClient(create_app(make_config(tmp_path, public_url=PUBLIC), FakeWorld([]).client())) as c:
+        body = {"redirect_uris": [REDIRECT], "token_endpoint_auth_method": "none", "client_name": "t"}
+        ok = c.post("/register", json={**body, "scope": "openid profile email offline_access"})
+        assert ok.status_code == 201, ok.text
+        bad = c.post("/register", json={**body, "scope": "admin"})
+        assert bad.status_code == 400 and "admin" in bad.text
