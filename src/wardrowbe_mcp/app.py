@@ -38,6 +38,9 @@ from .uploads import (
 
 SERVER_NAME = "wardrowbe-mcp"
 SCOPE = "wardrowbe"
+# Scopes a client may register for. Many clients ask for the standard OIDC ones, so accept them
+# too. They grant nothing extra: every token is for the same Wardrowbe user and the same tools.
+CLIENT_SCOPES = [SCOPE, "openid", "profile", "email", "offline_access"]
 
 
 def is_authorized(header: str | None, api_key: str) -> bool:
@@ -163,7 +166,7 @@ def create_app(config: Config, http: httpx.AsyncClient | None = None, uploads: U
                 issuer_url=config.public_url,
                 resource_server_url=f"{config.public_url}/mcp",
                 client_registration_options=ClientRegistrationOptions(
-                    enabled=True, valid_scopes=[SCOPE], default_scopes=[SCOPE]
+                    enabled=True, valid_scopes=CLIENT_SCOPES, default_scopes=[SCOPE]
                 ),
                 required_scopes=None,
                 # Tokens are opaque and issued only by this server, for this one resource.
